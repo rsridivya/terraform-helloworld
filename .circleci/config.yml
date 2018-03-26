@@ -1,0 +1,62 @@
+version: 2
+
+# Default configurations
+terraform: &terraform
+  docker:
+    - image: tutum/hello-world
+  working_directory: /tmp/workspace
+
+jobs:
+# Application related jobs are below
+  checkout:
+    <<: *terraform
+    steps:
+      - checkout
+      - persist_to_workspace:
+          root: .
+          paths: .
+
+# Infrastructure related jobs are below
+
+  plan_infrastructure:
+    <<: *terraform
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace
+      - run:
+          name: terraform init
+          command: terraform init -input=false
+      - run:
+          name: terraform plan
+          command: terraform plan -input=false -out=tfplan
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .terraform # persist this to be able to apply execution plan without running init once more
+            - tfplan
+
+  apply_infrastructure:
+    <<: *terraform
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace
+      - run:
+          name: terraform apply
+          command: terraform apply -input=false tfplan
+
+workflows:
+  version: 2
+  test-build-plan-apply:
+    jobs:
+      - checkout
+      - plan_infrastructure:
+          requires:
+            - checkout
+      - approve_infrastructure:
+          type: approval
+          requires:
+            - plan_infrastructure
+      - apply_infrastructure:
+          requires:
+            - approve_infrastructure
+
